@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Through the Door</title>
+<!-- Imports the instant MQTT sync library -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  body { 
+    background: black; 
+    color: white; 
+    font-family: 'Courier New', Courier, monospace; 
+    margin: 0; 
+    overflow: hidden; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    height: 100vh; 
+    text-align: center; 
+  }
+  .hidden { display: none !important; }
+  
+  /* Setup Screen */
+  #setup { display: flex; gap: 20px; flex-direction: column; align-items: center;}
+  .btn-container { display: flex; gap: 20px; }
+  .btn { 
+    background: #111; color: white; border: 1px solid #333; 
+    padding: 20px 40px; cursor: pointer; font-size: 20px; transition: 0.3s; 
+  }
+  .btn:hover { background: #222; border-color: white; }
+  
+  /* Inside Station */
+  #inside { flex-direction: column; gap: 20px; width: 80%; max-width: 600px; }
+  textarea { 
+    width: 100%; height: 150px; background: #111; color: white; 
+    border: 1px solid #444; padding: 20px; font-size: 18px; 
+    font-family: inherit; resize: none; outline: none;
+  }
+  textarea:focus { border-color: #888; }
+  
+  /* Outside Station */
+  #outside { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; padding: 10%; box-sizing: border-box; }
+  #projector-text { font-size: 3.5vw; opacity: 0; transition: opacity 2s ease-in-out; font-style: italic; color: #ccc;}
+  
+  /* The News Headline */
+  #headline { 
+    font-size: 5vw; color: white; background: red; font-weight: bold; 
+    font-family: 'Impact', sans-serif; padding: 20px 40px;
+    opacity: 0; text-transform: uppercase; letter-spacing: 2px; 
+  }
+  .fade-in { opacity: 1 !important; }
+</style>
+</head>
+<body>
+
+<!-- 1. SETUP SCREEN -->
+<div id="setup">
+  <div id="status" style="color: #666; font-style: italic;">Connecting to sync server...</div>
+  <div class="btn-container">
+    <button class="btn hidden" id="btn-inside">Inside Station<br><span style="font-size: 12px; color: #888;">(Visitor Input)</span></button>
+    <button class="btn hidden" id="btn-outside">Outside Station<br><span style="font-size: 12px; color: #888;">(Wall Projector)</span></button>
+  </div>
+</div>
+
+<!-- 2. INSIDE STATION (Input) -->
+<div id="inside" class="hidden">
+  <p style="letter-spacing: 2px;">What is happening? What is your message to them?</p>
+  <textarea id="user-input" placeholder="Type your assumption here..."></textarea>
+  <button class="btn" id="submit-btn">Commit Message</button>
+  <p id="inside-status" style="color: #666; font-size: 14px; height: 20px;"></p>
+</div>
+
+<!-- 3. OUTSIDE STATION (Projector) -->
+<div id="outside" class="hidden">
+  <div id="projector-text"></div>
+  <div id="headline" class="hidden">BREAKING: SUSPECT IN LOCAL QUARANTINE IDENTIFIED AS PROTECTIVE GUARDIAN</div>
+</div>
+
+<script>
+  // Connects to a free, public server instantly
+  const client = mqtt.connect('wss://broker.hivemq.com:8000/mqtt');
+  const topic = 'installation_door_xyz_2026_sync';
+
+  // Wait for connection, then show the buttons
+  client.on('connect', () => {
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('btn-inside').classList.remove('hidden');
+    document.getElementById('btn-outside').classList.remove('hidden');
+    client.subscribe(topic);
+  });
+
+  // Handle Screen Selection
+  document.getElementById('btn-inside').addEventListener('click', () => {
+    document.getElementById('setup').classList.add('hidden');
+    document.getElementById('inside').classList.remove('hidden');
+    document.getElementById('inside').style.display = 'flex';
+  });
+
+  document.getElementById('btn-outside').addEventListener('click', () => {
+    document.getElementById('setup').classList.add('hidden');
+    document.getElementById('outside').classList.remove('hidden');
+    document.body.style.cursor = 'none'; // Auto-hides mouse for projection
+  });
+
+  // Handle Sending Data (Inside Station)
+  document.getElementById('submit-btn').addEventListener('click', () => {
+    const text = document.getElementById('user-input').value;
+    if(text.trim() === '') return;
+    
+    // Send data over MQTT
+    client.publish(topic, JSON.stringify({ message: text }));
+    
+    // UI feedback for the visitor
+    document.getElementById('inside-status').innerText = "Message committed.";
+    document.getElementById('user-input').value = '';
+    setTimeout(() => { document.getElementById('inside-status').innerText = ""; }, 5000);
+  });
+
+  // Handle Receiving Data & Animations (Outside Station)
+  client.on('message', (t, payload) => {
+    if(t !== topic || document.getElementById('outside').classList.contains('hidden')) return;
+    
+    const data = JSON.parse(payload.toString());
+    const projText = document.getElementById('projector-text');
+    const headline = document.getElementById('headline');
+
+    // 1. Reset everything to black instantly
+    projText.classList.remove('fade-in');
+    headline.classList.remove('fade-in');
+    headline.classList.add('hidden');
+    projText.classList.remove('hidden');
+
+    // 2. Fade in the visitor's interpretation
+    setTimeout(() => {
+      projText.innerText = `"${data.message}"`;
+      projText.classList.add('fade-in');
+    }, 500);
+
+    // 3. Wait 8 seconds, fade out text, then flash the news headline
+    setTimeout(() => {
+      projText.classList.remove('fade-in');
+      
+      setTimeout(() => {
+        projText.classList.add('hidden');
+        headline.classList.remove('hidden');
+        
+        // Force browser to register the class change before fading in
+        void headline.offsetWidth; 
+        headline.classList.add('fade-in');
+      }, 2000); // 2 second fade-out duration
+      
+    }, 8000); // 8 seconds of reading time
+  });
+</script>
+</body>
+</html>
